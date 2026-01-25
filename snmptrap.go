@@ -51,8 +51,7 @@ type MetricData struct {
 
 // AlertStatus 告警状态跟踪
 type AlertStatus struct {
-	IsInAlert  map[string]bool
-	ClearCount map[string]int
+	IsInAlert map[string]bool
 }
 
 var (
@@ -116,8 +115,7 @@ func main() {
 
 	// 初始化告警状态跟踪
 	alertStatus := AlertStatus{
-		IsInAlert:  make(map[string]bool),
-		ClearCount: make(map[string]int),
+		IsInAlert: make(map[string]bool),
 	}
 
 	// 启动定时任务
@@ -264,9 +262,6 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 			log.Printf("Successfully sent CLEAR SNMP trap for %s", metric.Name)
 			// 更新告警状态
 			alertStatus.IsInAlert[metric.Name] = false
-			// 更新清除告警次数
-			alertStatus.ClearCount[metric.Name]++
-			log.Printf("Total CLEAR traps sent for %s: %d", metric.Name, alertStatus.ClearCount[metric.Name])
 		}
 	}
 }
