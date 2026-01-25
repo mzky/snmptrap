@@ -1,0 +1,43 @@
+{
+  "config": {
+    "interval": 30,
+    "snmp": {
+      "community": "bjca@2019",
+      "target": "192.168.0.100",
+      "port": 162
+    }
+  },
+  "metrics": [
+    {
+      "name": "cpu_usage",
+      "type": "command",
+      "command":"top -bn1 | grep \"Cpu(s)\" | awk '{print $2}' | sed 's/%us,//'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.1",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.4",
+      "warningTemplate": "[Warning] CPU High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] CPU alert cleared, currently at %.2f%%",
+      "threshold": 1.0
+    },
+    {
+      "name": "memory_usage",
+      "type": "command",
+      "command": "free | grep Mem | awk '{printf(\"%.2f\", (1 - $7/$2) * 100.0)}'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.3",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.6",
+      "warningTemplate": "[Warning] Memory High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] Memory alert cleared, currently at %.2f%%",
+      "threshold": 1.0
+    },
+    {
+      "name": "disk_usage",
+      "type": "command",
+      "command": "df / | awk 'NR==2 {print $5}' | sed 's/%//'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.2",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.5",
+      "warningTemplate": "[Warning] Disk High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] Disk alert cleared, currently at %.2f%%",
+      "threshold": 1.0
+    }
+  ],
+  "extensions": {}
+}

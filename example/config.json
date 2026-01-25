@@ -1,0 +1,83 @@
+{
+  "config": {
+    "interval": 30,
+    "snmp": {
+      "community": "bjca@2019",
+      "target": "192.168.0.100",
+      "port": 162
+    }
+  },
+  "metrics": [
+    {
+      "name": "cpu_usage",
+      "type": "command",
+      "command": "LC_ALL=C top -bn1 | grep 'Cpu(s)' | awk -F '%us,? %sy,? %ni,? %id,? %wa,? %hi,? %si,? %st' '{print 100-$4}'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.1",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.4",
+      "warningTemplate": "[Warning] CPU High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] CPU alert cleared, currently at %.2f%%",
+      "threshold": 80.0
+    },
+    {
+      "name": "cpu_usage_alternative",
+      "type": "command",
+      "command": "LC_ALL=C sar -u 1 1 | awk 'END {print 100 -$NF}'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.1",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.4",
+      "warningTemplate": "[Warning] CPU High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] CPU alert cleared, currently at %.2f%%",
+      "threshold": 80.0
+    },
+    {
+      "name": "memory_usage",
+      "type": "command",
+      "command": "free | awk '/^Mem:/ {printf \"%.2f\", ($3-$6)/$2*100}'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.3",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.6",
+      "warningTemplate": "[Warning] Memory High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] Memory alert cleared, currently at %.2f%%",
+      "threshold": 85.0
+    },
+    {
+      "name": "memory_usage_proc",
+      "type": "command",
+      "command": "awk '/^MemTotal:|^MemAvailable:/ {a[$1]=$2} END {printf \"%.2f\", (a[\"MemTotal:\"]-a[\"MemAvailable:\"])/a[\"MemTotal:\"]*100}' /proc/meminfo",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.3",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.6",
+      "warningTemplate": "[Warning] Memory High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] Memory alert cleared, currently at %.2f%%",
+      "threshold": 85.0
+    },
+    {
+      "name": "disk_usage",
+      "type": "command",
+      "command": "df / | awk 'NR==2 {print $5}' | sed 's/%//'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.100.2",
+      "clearOid": ".1.3.6.1.4.1.43353.1.100.5",
+      "warningTemplate": "[Warning] Disk High utilization, currently at %.2f%%",
+      "clearTemplate": "[Clear] Disk alert cleared, currently at %.2f%%",
+      "threshold": 80.0
+    },
+    {
+      "name": "load_average",
+      "type": "command",
+      "command": "cat /proc/loadavg | awk '{print $1}'",
+      "warningOid": ".1.3.6.1.4.1.43353.1.101.1",
+      "clearOid": ".1.3.6.1.4.1.43353.1.101.2",
+      "warningTemplate": "[Warning] Load average is high: %.2f",
+      "clearTemplate": "[Clear] Load average is normal: %.2f",
+      "threshold": 2.0
+    },
+    {
+      "name": "process_count",
+      "type": "command",
+      "command": "ps -e --no-headers | wc -l",
+      "warningOid": ".1.3.6.1.4.1.43353.1.101.3",
+      "clearOid": ".1.3.6.1.4.1.43353.1.101.4",
+      "warningTemplate": "[Warning] Process count is high: %d processes",
+      "clearTemplate": "[Clear] Process count is normal: %d processes",
+      "threshold": 500.0
+    }
+  ],
+  "extensions": {}
+}
