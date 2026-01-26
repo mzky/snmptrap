@@ -187,6 +187,7 @@ func loadConfig(filename string) (*Config, error) {
 // 初始化SNMP客户端
 func initSNMP(config *Config) *gosnmp.GoSNMP {
 	g := &gosnmp.GoSNMP{
+		Target:    config.Config.SNMP.Target,
 		Port:      uint16(config.Config.SNMP.Port),
 		Community: config.Config.SNMP.Community,
 		Version:   gosnmp.Version2c,
