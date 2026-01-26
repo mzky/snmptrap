@@ -1,0 +1,19 @@
+[Unit]
+Description=SNMP Trap Monitoring Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/snmptrap
+ExecStart=/opt/snmptrap/snmptrap -c /opt/snmptrap/config.json
+Restart=always
+RestartSec=3s
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=snmptrap
+
+[Install]
+WantedBy=multi-user.target
