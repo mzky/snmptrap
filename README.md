@@ -1,4 +1,4 @@
-# SNMPTrap监控系统
+# SNMPTrap工具
 
 使用JSON配置的通用SNMPTrap监控与告警系统，支持自定义指标、脚本和命令执行。
 
@@ -141,7 +141,7 @@ sudo ./deploy.sh help
       "clearOid": "清除告警OID",
       "warningTemplate": "告警消息模板",
       "clearTemplate": "清除消息模板",
-      "threshold": 阈值
+      "threshold": 0
     }
   ]
 }
