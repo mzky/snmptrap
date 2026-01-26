@@ -1,6 +1,6 @@
 {
   "config": {
-    "interval": 30,
+    "interval": 3,
     "snmp": {
       "community": "bjca@2019",
       "target": "192.168.0.100",
@@ -16,7 +16,7 @@
       "clearOid": ".1.3.6.1.4.1.43353.1.100.4",
       "warningTemplate": "[Warning] CPU High utilization, currently at %.2f%%",
       "clearTemplate": "[Clear] CPU alert cleared, currently at %.2f%%",
-      "threshold": 1.0
+      "threshold": 6.0
     },
     {
       "name": "memory_usage",
@@ -26,17 +26,17 @@
       "clearOid": ".1.3.6.1.4.1.43353.1.100.6",
       "warningTemplate": "[Warning] Memory High utilization, currently at %.2f%%",
       "clearTemplate": "[Clear] Memory alert cleared, currently at %.2f%%",
-      "threshold": 1.0
+      "threshold": 55.0
     },
     {
       "name": "disk_usage",
       "type": "command",
-      "command": "df / | awk 'NR==2 {print $5}' | sed 's/%//'",
+      "command": "df -P / | awk 'NR==2 {printf $5+0}'",
       "warningOid": ".1.3.6.1.4.1.43353.1.100.2",
       "clearOid": ".1.3.6.1.4.1.43353.1.100.5",
       "warningTemplate": "[Warning] Disk High utilization, currently at %.2f%%",
       "clearTemplate": "[Clear] Disk alert cleared, currently at %.2f%%",
-      "threshold": 1.0
+      "threshold": 7.0
     }
   ],
   "extensions": {}

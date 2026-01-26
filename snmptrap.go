@@ -187,10 +187,12 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 		return
 	}
 
-	// 对于数值型指标，使用正常的告警逻辑
+	// 关键修复：设置指标名称，因为getMetricData中MetricName为空
+	metricData.MetricName = metric.Name
+
 	// 检查是否需要发送告警
 	if metricData.IsWarning && !alertStatus.IsInAlert[metric.Name] {
-		// 超过阈值且不在告警状态，发送告警
+		// 第一次进入告警状态，发送告警消息
 		message := fmt.Sprintf(metric.WarningTemplate, metricData.CurrentValue)
 
 		// 准备trap数据
@@ -223,11 +225,9 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 			log.Printf("Failed to send WARNING SNMP trap for %s: %v", metric.Name, err)
 		} else {
 			log.Printf("Successfully sent WARNING SNMP trap for %s", metric.Name)
-			// 更新告警状态
-			alertStatus.IsInAlert[metric.Name] = true
 		}
 	} else if !metricData.IsWarning && alertStatus.IsInAlert[metric.Name] {
-		// 低于阈值且在告警状态，发送一次clear消息
+		// 从告警状态转为正常状态，发送清除消息（只发送一次）
 		message := fmt.Sprintf(metric.ClearTemplate, metricData.CurrentValue)
 
 		// 准备trap数据
@@ -260,8 +260,6 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 			log.Printf("Failed to send CLEAR SNMP trap for %s: %v", metric.Name, err)
 		} else {
 			log.Printf("Successfully sent CLEAR SNMP trap for %s", metric.Name)
-			// 更新告警状态
-			alertStatus.IsInAlert[metric.Name] = false
 		}
 	}
 }
