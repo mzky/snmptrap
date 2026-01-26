@@ -67,41 +67,24 @@ var (
 
 const Version = "1.0.0"
 
+// 命令行参数处理结构
+type CmdArgs struct {
+	ConfigPath string
+	PrintLog   bool
+}
+
 func main() {
-	// 解析命令行参数
-	flag.Parse()
-
-	// 处理版本信息请求
-	if *showVersion {
-		fmt.Printf("SNMP Trap Monitor v%s\n", Version)
-		fmt.Printf("Go Version: %s\n", runtime.Version())
-		fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-		return
-	}
-
-	// 处理帮助信息请求
-	if *showHelp {
-		fmt.Println("SNMP Trap Monitor - Universal SNMP Trap monitoring and alerting system")
-		fmt.Println()
-		fmt.Println("Usage:")
-		fmt.Printf("  %s [options]\n", os.Args[0])
-		fmt.Println()
-		fmt.Println("Options:")
-		flag.PrintDefaults()
-		return
+	// 解析并处理命令行参数
+	cmdArgs, err := parseCmdArgs()
+	if err != nil {
+		log.Fatalf("Error parsing command line arguments: %v", err)
 	}
 
 	// 设置日志输出
-	if !*printLog {
-		// 如果不打印详细日志，则禁用日志输出
-		log.SetOutput(io.Discard)
-	} else {
-		// 如果需要打印详细日志，则添加文件和行号信息
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
-	}
+	setupLogger(cmdArgs.PrintLog)
 
 	// 读取配置文件
-	config, err := loadConfig(*configPath)
+	config, err := loadConfig(cmdArgs.ConfigPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -115,7 +98,59 @@ func main() {
 		IsInAlert: make(map[string]bool),
 	}
 
-	// 启动定时任务
+	// 启动定时任务（异步非阻塞方式）
+	go startMonitoringTask(snmpClient, config, &alertStatus)
+
+	// 保持主程序运行
+	select {}
+
+}
+
+// 解析命令行参数
+func parseCmdArgs() (*CmdArgs, error) {
+	// 解析命令行参数
+	flag.Parse()
+
+	// 处理版本信息请求
+	if *showVersion {
+		fmt.Printf("SNMP Trap Monitor v%s\n", Version)
+		fmt.Printf("Go Version: %s\n", runtime.Version())
+		fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+		os.Exit(0)
+	}
+
+	// 处理帮助信息请求
+	if *showHelp {
+		fmt.Println("SNMP Trap Monitor - Universal SNMP Trap monitoring and alerting system")
+		fmt.Println()
+		fmt.Println("Usage:")
+		fmt.Printf("  %s [options]\n", os.Args[0])
+		fmt.Println()
+		fmt.Println("Options:")
+		flag.PrintDefaults()
+		os.Exit(0)
+	}
+
+	return &CmdArgs{
+		ConfigPath: *configPath,
+		PrintLog:   *printLog,
+	}, nil
+}
+
+// 设置日志配置
+func setupLogger(printLog bool) {
+	if !printLog {
+		// 如果不打印详细日志，则禁用日志输出
+		log.SetOutput(io.Discard)
+	} else {
+		// 如果需要打印详细日志，则添加文件和行号信息
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+	}
+}
+
+// 启动监控任务（异步非阻塞）
+func startMonitoringTask(snmpClient *gosnmp.GoSNMP, config *Config, alertStatus *AlertStatus) {
+	// 设置监控间隔
 	interval := time.Duration(config.Config.Interval) * time.Second
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -127,11 +162,10 @@ func main() {
 		case <-ticker.C:
 			// 发送所有指标的trap消息
 			for _, metric := range config.Metrics {
-				sendMetricTrap(snmpClient, metric, &alertStatus)
+				sendMetricTrap(snmpClient, metric, alertStatus)
 			}
 		}
 	}
-
 }
 
 // 加载配置文件
@@ -179,8 +213,8 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, metric Metric, alertStatus *Alert
 	metricData.MetricName = metric.Name
 
 	// 检查是否需要发送告警
-	if metricData.IsWarning && !alertStatus.IsInAlert[metric.Name] {
-		// 第一次进入告警状态，发送告警消息
+	if metricData.IsWarning {
+		// 当指标值超过阈值时，每次检查都重复发送告警消息
 		message := fmt.Sprintf(metric.WarningTemplate, metricData.CurrentValue)
 
 		// 准备trap数据
@@ -213,40 +247,47 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, metric Metric, alertStatus *Alert
 		alertStatus.mu.Lock()
 		alertStatus.IsInAlert[metric.Name] = true
 		alertStatus.mu.Unlock()
-	} else if !metricData.IsWarning && alertStatus.IsInAlert[metric.Name] {
-		// 从告警状态转为正常状态，发送清除消息（只发送一次）
-		message := fmt.Sprintf(metric.ClearTemplate, metricData.CurrentValue)
-
-		// 准备trap数据
-		vars := []gosnmp.SnmpPDU{
-			{
-				Name:  metric.ClearOid,
-				Type:  gosnmp.OctetString,
-				Value: []byte(message),
-			},
-			{
-				Name:  ".1.3.6.1.2.1.1.3.0", // sysUpTime
-				Type:  gosnmp.TimeTicks,
-				Value: uint32(time.Now().Unix() / 100),
-			},
-		}
-
-		// 创建SNMP trap
-		trap := gosnmp.SnmpTrap{
-			Variables: vars,
-		}
-
-		// 发送trap消息
-		log.Printf("Sending CLEAR SNMP trap for %s: %s", metric.Name, message)
-		if _, err := snmpClient.SendTrap(trap); err != nil {
-			log.Printf("Failed to send CLEAR SNMP trap for %s: %v", metric.Name, err)
-		} else {
-			log.Printf("Successfully sent CLEAR SNMP trap for %s", metric.Name)
-		}
-		// 更新状态：标记为不在告警状态
+	} else {
+		// 检查是否需要发送清除消息
 		alertStatus.mu.Lock()
-		alertStatus.IsInAlert[metric.Name] = false
+		isInAlert := alertStatus.IsInAlert[metric.Name]
 		alertStatus.mu.Unlock()
+
+		if isInAlert {
+			// 从告警状态转为正常状态，发送清除消息（只发送一次）
+			message := fmt.Sprintf(metric.ClearTemplate, metricData.CurrentValue)
+
+			// 准备trap数据
+			vars := []gosnmp.SnmpPDU{
+				{
+					Name:  metric.ClearOid,
+					Type:  gosnmp.OctetString,
+					Value: []byte(message),
+				},
+				{
+					Name:  ".1.3.6.1.2.1.1.3.0", // sysUpTime
+					Type:  gosnmp.TimeTicks,
+					Value: uint32(time.Now().Unix() / 100),
+				},
+			}
+
+			// 创建SNMP trap
+			trap := gosnmp.SnmpTrap{
+				Variables: vars,
+			}
+
+			// 发送trap消息
+			log.Printf("Sending CLEAR SNMP trap for %s: %s", metric.Name, message)
+			if _, err := snmpClient.SendTrap(trap); err != nil {
+				log.Printf("Failed to send CLEAR SNMP trap for %s: %v", metric.Name, err)
+			} else {
+				log.Printf("Successfully sent CLEAR SNMP trap for %s", metric.Name)
+			}
+			// 更新状态：标记为不在告警状态
+			alertStatus.mu.Lock()
+			alertStatus.IsInAlert[metric.Name] = false
+			alertStatus.mu.Unlock()
+		}
 	}
 }
 
