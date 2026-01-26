@@ -11,10 +11,23 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
 )
+
+// Metric 指标配置结构
+type Metric struct {
+	Name            string  `json:"name"`
+	Type            string  `json:"type"`    // "script" or "command"
+	Command         string  `json:"command"` // 通用的命令或脚本路径
+	WarningOid      string  `json:"warningOid"`
+	ClearOid        string  `json:"clearOid"`
+	WarningTemplate string  `json:"warningTemplate"`
+	ClearTemplate   string  `json:"clearTemplate"`
+	Threshold       float64 `json:"threshold"`
+}
 
 // Config 配置结构
 type Config struct {
@@ -26,22 +39,12 @@ type Config struct {
 			Port      int    `json:"port"`
 		} `json:"snmp"`
 	} `json:"config"`
-	Metrics []struct {
-		Name            string  `json:"name"`
-		Type            string  `json:"type"`    // "script" or "command"
-		Command         string  `json:"command"` // 通用的命令或脚本路径
-		WarningOid      string  `json:"warningOid"`
-		ClearOid        string  `json:"clearOid"`
-		WarningTemplate string  `json:"warningTemplate"`
-		ClearTemplate   string  `json:"clearTemplate"`
-		Threshold       float64 `json:"threshold"`
-	} `json:"metrics"`
+	Metrics    []Metric               `json:"metrics"`
 	Extensions map[string]interface{} `json:"extensions"`
 }
 
 // MetricData 指标数据结构
 type MetricData struct {
-	Hostname     string
 	MetricName   string
 	CurrentValue float64
 	Threshold    float64
@@ -52,6 +55,7 @@ type MetricData struct {
 // AlertStatus 告警状态跟踪
 type AlertStatus struct {
 	IsInAlert map[string]bool
+	mu        sync.Mutex
 }
 
 var (
@@ -106,13 +110,6 @@ func main() {
 	snmpClient := initSNMP(config)
 	defer snmpClient.Conn.Close()
 
-	// 获取主机名
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "localhost"
-		log.Printf("Failed to get hostname, using %s: %v", hostname, err)
-	}
-
 	// 初始化告警状态跟踪
 	alertStatus := AlertStatus{
 		IsInAlert: make(map[string]bool),
@@ -130,10 +127,11 @@ func main() {
 		case <-ticker.C:
 			// 发送所有指标的trap消息
 			for _, metric := range config.Metrics {
-				sendMetricTrap(snmpClient, hostname, metric, &alertStatus)
+				sendMetricTrap(snmpClient, metric, &alertStatus)
 			}
 		}
 	}
+
 }
 
 // 加载配置文件
@@ -155,7 +153,6 @@ func loadConfig(filename string) (*Config, error) {
 // 初始化SNMP客户端
 func initSNMP(config *Config) *gosnmp.GoSNMP {
 	g := &gosnmp.GoSNMP{
-		Target:    config.Config.SNMP.Target,
 		Port:      uint16(config.Config.SNMP.Port),
 		Community: config.Config.SNMP.Community,
 		Version:   gosnmp.Version2c,
@@ -170,18 +167,9 @@ func initSNMP(config *Config) *gosnmp.GoSNMP {
 }
 
 // 发送指标的trap消息
-func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
-	Name            string  `json:"name"`
-	Type            string  `json:"type"`
-	Command         string  `json:"command"`
-	WarningOid      string  `json:"warningOid"`
-	ClearOid        string  `json:"clearOid"`
-	WarningTemplate string  `json:"warningTemplate"`
-	ClearTemplate   string  `json:"clearTemplate"`
-	Threshold       float64 `json:"threshold"`
-}, alertStatus *AlertStatus) {
+func sendMetricTrap(snmpClient *gosnmp.GoSNMP, metric Metric, alertStatus *AlertStatus) {
 	// 获取实际指标数据
-	metricData, err := getMetricData(hostname, metric.Type, metric.Command, metric.Threshold)
+	metricData, err := getMetricData(metric.Type, metric.Command, metric.Threshold)
 	if err != nil {
 		log.Printf("Failed to get metric data for %s: %v", metric.Name, err)
 		return
@@ -203,11 +191,6 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 				Value: []byte(message),
 			},
 			{
-				Name:  ".1.3.6.1.2.1.1.5.0", // sysName
-				Type:  gosnmp.OctetString,
-				Value: []byte(hostname),
-			},
-			{
 				Name:  ".1.3.6.1.2.1.1.3.0", // sysUpTime
 				Type:  gosnmp.TimeTicks,
 				Value: uint32(time.Now().Unix() / 100),
@@ -226,6 +209,10 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 		} else {
 			log.Printf("Successfully sent WARNING SNMP trap for %s", metric.Name)
 		}
+		// 更新状态：标记为在告警状态
+		alertStatus.mu.Lock()
+		alertStatus.IsInAlert[metric.Name] = true
+		alertStatus.mu.Unlock()
 	} else if !metricData.IsWarning && alertStatus.IsInAlert[metric.Name] {
 		// 从告警状态转为正常状态，发送清除消息（只发送一次）
 		message := fmt.Sprintf(metric.ClearTemplate, metricData.CurrentValue)
@@ -236,11 +223,6 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 				Name:  metric.ClearOid,
 				Type:  gosnmp.OctetString,
 				Value: []byte(message),
-			},
-			{
-				Name:  ".1.3.6.1.2.1.1.5.0", // sysName
-				Type:  gosnmp.OctetString,
-				Value: []byte(hostname),
 			},
 			{
 				Name:  ".1.3.6.1.2.1.1.3.0", // sysUpTime
@@ -261,11 +243,15 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, hostname string, metric struct {
 		} else {
 			log.Printf("Successfully sent CLEAR SNMP trap for %s", metric.Name)
 		}
+		// 更新状态：标记为不在告警状态
+		alertStatus.mu.Lock()
+		alertStatus.IsInAlert[metric.Name] = false
+		alertStatus.mu.Unlock()
 	}
 }
 
 // 获取指标数据 - 支持脚本和命令
-func getMetricData(hostname, metricType, command string, threshold float64) (MetricData, error) {
+func getMetricData(metricType, command string, threshold float64) (MetricData, error) {
 	// 执行命令或脚本
 	var outputStr string
 	var err error
@@ -297,7 +283,6 @@ func getMetricData(hostname, metricType, command string, threshold float64) (Met
 	isWarning := value > threshold
 
 	return MetricData{
-		Hostname:     hostname,
 		MetricName:   "",
 		CurrentValue: value,
 		Threshold:    threshold,
