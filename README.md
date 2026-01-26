@@ -1,6 +1,6 @@
-# SNMP Trap 监控系统
+# SNMPTrap监控系统
 
-使用JSON配置的通用SNMP Trap监控与告警系统，支持自定义指标、脚本和命令执行。
+使用JSON配置的通用SNMPTrap监控与告警系统，支持自定义指标、脚本和命令执行。
 
 ## 功能特性
 
@@ -160,7 +160,6 @@ go run snmptrap.go
   "threshold": 10.0
 }
 ```
-
 
 
 ## 告警逻辑
