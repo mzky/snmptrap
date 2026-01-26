@@ -7,7 +7,7 @@ set -e
 
 # 配置参数
 EXECUTABLE="snmptrap"
-BUILD_DIR="./build"
+BUILD_DIR="."
 
 # 颜色定义
 GREEN="\033[0;32m"
