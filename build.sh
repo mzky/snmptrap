@@ -53,9 +53,9 @@ build_x86() {
     export GOARCH=amd64
     export CGO_ENABLED=0
     
-    # 编译
+    # 编译（添加优化选项减小体积）
     log_info "执行编译命令..."
-    go build -o "$BUILD_DIR/${EXECUTABLE}_x86" .
+    go build -ldflags="-s -w" -trimpath -o "$BUILD_DIR/${EXECUTABLE}_x86" .
     
     # 复制到当前目录
     cp "$BUILD_DIR/${EXECUTABLE}_x86" "./$EXECUTABLE"
@@ -78,9 +78,9 @@ build_arm() {
     export GOARCH=arm64
     export CGO_ENABLED=0
     
-    # 编译
+    # 编译（添加优化选项减小体积）
     log_info "执行编译命令..."
-    go build -o "$BUILD_DIR/${EXECUTABLE}_arm" .
+    go build -ldflags="-s -w" -trimpath -o "$BUILD_DIR/${EXECUTABLE}_arm" .
     
     log_info "ARM 架构编译完成: $BUILD_DIR/${EXECUTABLE}_arm"
 }
