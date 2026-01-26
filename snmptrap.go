@@ -180,6 +180,16 @@ func loadConfig(filename string) (*Config, error) {
 	if err := json.NewDecoder(file).Decode(&config); err != nil {
 		return nil, fmt.Errorf("failed to decode config: %w", err)
 	}
+	// 添加配置验证
+	if config.Config.SNMP.Target == "" {
+		return nil, fmt.Errorf("SNMP target is required")
+	}
+	if config.Config.SNMP.Community == "" {
+		return nil, fmt.Errorf("SNMP community is required")
+	}
+	if config.Config.SNMP.Port == 0 {
+		config.Config.SNMP.Port = 162 // 默认端口
+	}
 
 	return &config, nil
 }
