@@ -1,6 +1,6 @@
 # 不同Linux发行版的命令兼容性说明
 
-本文档介绍了SNMP Trap监控系统中使用的命令在CentOS、openEuler、Debian和Ubuntu发行版上的兼容性情况。
+本文档介绍了SNMPTrap监控系统中使用的命令在CentOS、openEuler、Debian和Ubuntu发行版上的兼容性情况。
 
 注意为了兼容中文环境，命令前缀需要增加`LC_ALL=C`
 

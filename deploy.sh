@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# SNMP Trap 部署脚本
-# 用于安装、配置和管理 SNMP Trap 服务
+# SNMPTrap 部署脚本
+# 用于安装、配置和管理 SNMPTrap 服务
 
 set -e
 
@@ -40,7 +40,7 @@ check_root() {
 
 # 安装服务
 install_service() {
-    log_info "开始安装 SNMP Trap 服务..."
+    log_info "开始安装 SNMPTrap 服务..."
     
     # 创建安装目录
     if [ ! -d "$INSTALL_DIR" ]; then
@@ -81,33 +81,33 @@ install_service() {
     systemctl daemon-reload
     
     # 启用服务
-    log_info "启用 SNMP Trap 服务"
+    log_info "启用 SNMPTrap 服务"
     systemctl enable "$SERVICE_FILE"
     
     # 启动服务
-    log_info "启动 SNMP Trap 服务"
+    log_info "启动 SNMPTrap 服务"
     systemctl start "$SERVICE_FILE"
     
     # 检查服务状态
     log_info "检查服务状态"
     systemctl status "$SERVICE_FILE" --no-pager
     
-    log_info "SNMP Trap 服务安装完成!"
+    log_info "SNMPTrap 服务安装完成!"
 }
 
 # 卸载服务
 uninstall_service() {
-    log_info "开始卸载 SNMP Trap 服务..."
+    log_info "开始卸载 SNMPTrap 服务..."
     
     # 停止服务
     if systemctl is-active --quiet "$SERVICE_FILE"; then
-        log_info "停止 SNMP Trap 服务"
+        log_info "停止 SNMPTrap 服务"
         systemctl stop "$SERVICE_FILE"
     fi
     
     # 禁用服务
     if systemctl is-enabled --quiet "$SERVICE_FILE"; then
-        log_info "禁用 SNMP Trap 服务"
+        log_info "禁用 SNMPTrap 服务"
         systemctl disable "$SERVICE_FILE"
     fi
     
@@ -127,17 +127,17 @@ uninstall_service() {
         rm -rf "$INSTALL_DIR"
     fi
     
-    log_info "SNMP Trap 服务卸载完成!"
+    log_info "SNMPTrap 服务卸载完成!"
 }
 
 # 显示帮助信息
 show_help() {
-    echo "SNMP Trap 部署脚本"
+    echo "SNMPTrap 部署脚本"
     echo "用法: $0 [选项]"
     echo ""
     echo "选项:"
-    echo "  install    安装 SNMP Trap 服务"
-    echo "  uninstall  卸载 SNMP Trap 服务"
+    echo "  install    安装 SNMPTrap 服务"
+    echo "  uninstall  卸载 SNMPTrap 服务"
     echo "  status     查看服务状态"
     echo "  restart    重启服务"
     echo "  help       显示此帮助信息"
@@ -146,13 +146,13 @@ show_help() {
 
 # 查看服务状态
 check_status() {
-    log_info "查看 SNMP Trap 服务状态..."
+    log_info "查看 SNMPTrap 服务状态..."
     systemctl status "$SERVICE_FILE" --no-pager
 }
 
 # 重启服务
 restart_service() {
-    log_info "重启 SNMP Trap 服务..."
+    log_info "重启 SNMPTrap 服务..."
     systemctl restart "$SERVICE_FILE"
     systemctl status "$SERVICE_FILE" --no-pager
 }

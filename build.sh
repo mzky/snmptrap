@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SNMP Trap 构建脚本
+# SNMPTrap 构建脚本
 # 用于编译不同架构的可执行文件
 
 set -e
@@ -119,7 +119,7 @@ clean() {
 
 # 显示帮助信息
 show_help() {
-    echo "SNMP Trap 构建脚本"
+    echo "SNMPTrap 构建脚本"
     echo "用法: $0 [选项]"
     echo ""
     echo "选项:"

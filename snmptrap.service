@@ -1,5 +1,5 @@
 [Unit]
-Description=SNMP Trap Monitoring Service
+Description=SNMPTrap Monitoring Service
 After=network.target
 Wants=network.target
 
