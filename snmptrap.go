@@ -29,16 +29,19 @@ type Metric struct {
 	Threshold       float64 `json:"threshold"`
 }
 
-// Config 配置结构
+// Config 全局配置结构
 type Config struct {
-	Config struct {
-		Interval int `json:"interval"`
-		SNMP     struct {
-			Community string `json:"community"`
-			Target    string `json:"target"`
-			Port      int    `json:"port"`
-		} `json:"snmp"`
-	} `json:"config"`
+	Interval int64 `json:"interval"`
+	SNMP     struct {
+		Community string   `json:"community"`
+		Targets   []string `json:"targets"`
+		Port      uint16   `json:"port"`
+	} `json:"snmp"`
+}
+
+// JsonConfig 配置结构
+type JsonConfig struct {
+	Config     Config                 `json:"config"`
 	Metrics    []Metric               `json:"metrics"`
 	Extensions map[string]interface{} `json:"extensions"`
 }
@@ -67,7 +70,7 @@ var (
 
 const Version = "1.0.0"
 
-// 命令行参数处理结构
+// CmdArgs 命令行参数处理结构
 type CmdArgs struct {
 	ConfigPath string
 	PrintLog   bool
@@ -89,9 +92,9 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// 初始化SNMP客户端
-	snmpClient := initSNMP(config)
-	defer snmpClient.Conn.Close()
+	// 初始化多目标SNMP客户端
+	snmpClient := initMultiSNMP(config)
+	defer snmpClient.Close()
 
 	// 初始化告警状态跟踪
 	alertStatus := AlertStatus{
@@ -113,7 +116,7 @@ func parseCmdArgs() (*CmdArgs, error) {
 
 	// 处理版本信息请求
 	if *showVersion {
-		fmt.Printf("SNMP Trap Monitor v%s\n", Version)
+		fmt.Printf("SNMPTrap Monitor v%s\n", Version)
 		fmt.Printf("Go Version: %s\n", runtime.Version())
 		fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 		os.Exit(0)
@@ -121,7 +124,7 @@ func parseCmdArgs() (*CmdArgs, error) {
 
 	// 处理帮助信息请求
 	if *showHelp {
-		fmt.Println("SNMP Trap Monitor - Universal SNMP Trap monitoring and alerting system")
+		fmt.Println("SNMPTrap Monitor - Universal SNMPTrap monitoring and alerting system")
 		fmt.Println()
 		fmt.Println("Usage:")
 		fmt.Printf("  %s [options]\n", os.Args[0])
@@ -139,29 +142,26 @@ func parseCmdArgs() (*CmdArgs, error) {
 
 // 设置日志配置
 func setupLogger(printLog bool) {
-	if !printLog {
-		// 如果不打印详细日志，则禁用日志输出
+	if !printLog { // 如果不打印详细日志，则禁用日志输出
 		log.SetOutput(io.Discard)
-	} else {
-		// 如果需要打印详细日志，则添加文件和行号信息
+	} else { // 如果需要打印详细日志，则添加文件和行号信息
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 	}
 }
 
 // 启动监控任务（异步非阻塞）
-func startMonitoringTask(snmpClient *gosnmp.GoSNMP, config *Config, alertStatus *AlertStatus) {
+func startMonitoringTask(snmpClient *MultiTargetSNMPClient, c *JsonConfig, alertStatus *AlertStatus) {
 	// 设置监控间隔
-	interval := time.Duration(config.Config.Interval) * time.Second
+	interval := time.Duration(c.Config.Interval) * time.Second
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("Starting SNMP trap sender with interval %s", interval)
+	log.Printf("Starting SNMPtrap sender with interval %s, targets: %v", interval, c.Config.SNMP.Targets)
 
 	for {
 		select {
-		case <-ticker.C:
-			// 发送所有指标的trap消息
-			for _, metric := range config.Metrics {
+		case <-ticker.C: // 发送所有指标的trap消息
+			for _, metric := range c.Metrics {
 				sendMetricTrap(snmpClient, metric, alertStatus)
 			}
 		}
@@ -169,50 +169,93 @@ func startMonitoringTask(snmpClient *gosnmp.GoSNMP, config *Config, alertStatus 
 }
 
 // 加载配置文件
-func loadConfig(filename string) (*Config, error) {
+func loadConfig(filename string) (*JsonConfig, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
 	defer file.Close()
 
-	var config Config
-	if err := json.NewDecoder(file).Decode(&config); err != nil {
+	var c JsonConfig
+	if err := json.NewDecoder(file).Decode(&c); err != nil {
 		return nil, fmt.Errorf("failed to decode config: %w", err)
 	}
 	// 添加配置验证
-	if config.Config.SNMP.Target == "" {
-		return nil, fmt.Errorf("SNMP target is required")
+	if len(c.Config.SNMP.Targets) == 0 {
+		return nil, fmt.Errorf("SNMP targets are required")
 	}
-	if config.Config.SNMP.Community == "" {
+	if c.Config.SNMP.Community == "" {
 		return nil, fmt.Errorf("SNMP community is required")
 	}
-	if config.Config.SNMP.Port == 0 {
-		config.Config.SNMP.Port = 162 // 默认端口
+	if c.Config.SNMP.Port == 0 {
+		c.Config.SNMP.Port = 162 // 默认端口
 	}
 
-	return &config, nil
+	return &c, nil
 }
 
-// 初始化SNMP客户端
-func initSNMP(config *Config) *gosnmp.GoSNMP {
-	g := &gosnmp.GoSNMP{
-		Target:    config.Config.SNMP.Target,
-		Port:      uint16(config.Config.SNMP.Port),
-		Community: config.Config.SNMP.Community,
-		Version:   gosnmp.Version2c,
-		Timeout:   time.Duration(2) * time.Second,
+// MultiTargetSNMPClient 多目标SNMP客户端包装器
+type MultiTargetSNMPClient struct {
+	clients []*gosnmp.GoSNMP
+}
+
+// 初始化多目标SNMP客户端
+func initMultiSNMP(c *JsonConfig) *MultiTargetSNMPClient {
+	var clients []*gosnmp.GoSNMP
+
+	for _, target := range c.Config.SNMP.Targets {
+		g := &gosnmp.GoSNMP{
+			Target:    target,
+			Port:      c.Config.SNMP.Port,
+			Community: c.Config.SNMP.Community,
+			Version:   gosnmp.Version2c,
+			Timeout:   time.Duration(2) * time.Second,
+		}
+
+		if err := g.Connect(); err != nil {
+			log.Printf("Failed to connect to SNMP server %s: %v", target, err)
+			continue
+		}
+
+		clients = append(clients, g)
 	}
 
-	if err := g.Connect(); err != nil {
-		log.Fatalf("Failed to connect to SNMP server: %v", err)
+	return &MultiTargetSNMPClient{
+		clients: clients,
+	}
+}
+
+// SendTrap 发送到所有目标
+func (m *MultiTargetSNMPClient) SendTrap(trap gosnmp.SnmpTrap) {
+	var wg sync.WaitGroup
+
+	for i, client := range m.clients {
+		wg.Add(1)
+		go func(index int, c *gosnmp.GoSNMP) {
+			defer wg.Done()
+
+			if _, err := c.SendTrap(trap); err != nil {
+				log.Printf("Failed to send SNMPtrap to target %s: %v", c.Target, err)
+			} else {
+				log.Printf("Successfully sent SNMPtrap to target %s", c.Target)
+			}
+		}(i, client)
 	}
 
-	return g
+	wg.Wait()
+}
+
+// Close 关闭所有连接
+func (m *MultiTargetSNMPClient) Close() {
+	for _, client := range m.clients {
+		if client.Conn != nil {
+			client.Conn.Close()
+		}
+	}
 }
 
 // 发送指标的trap消息
-func sendMetricTrap(snmpClient *gosnmp.GoSNMP, metric Metric, alertStatus *AlertStatus) {
+func sendMetricTrap(snmpClient *MultiTargetSNMPClient, metric Metric, alertStatus *AlertStatus) {
 	// 获取实际指标数据
 	metricData, err := getMetricData(metric.Type, metric.Command, metric.Threshold)
 	if err != nil {
@@ -228,32 +271,30 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, metric Metric, alertStatus *Alert
 		// 当指标值超过阈值时，每次检查都重复发送告警消息
 		message := fmt.Sprintf(metric.WarningTemplate, metricData.CurrentValue)
 
-		// 准备trap数据
+		// 准备trap数据 - 遵循SNMPv2c TRAP2 PDU规范
+		// 在SNMPv2c中，trap消息应包含snmpTrapOID作为第一个varbind，然后是enterprise特定的OIDs
 		vars := []gosnmp.SnmpPDU{
+			{
+				// SNMPv2-MIB::snmpTrapOID.0 - 必需的陷阱OID
+				Name:  ".1.3.6.1.6.3.1.1.4.1.0", // snmpTrapOID.0
+				Type:  gosnmp.ObjectIdentifier,
+				Value: metric.WarningOid, // 实际的告警OID
+			},
 			{
 				Name:  metric.WarningOid,
 				Type:  gosnmp.OctetString,
 				Value: []byte(message),
 			},
-			{
-				Name:  ".1.3.6.1.2.1.1.3.0", // sysUpTime
-				Type:  gosnmp.TimeTicks,
-				Value: uint32(time.Now().Unix() / 100),
-			},
 		}
 
-		// 创建SNMP trap
+		// 创建SNMPTrap
 		trap := gosnmp.SnmpTrap{
 			Variables: vars,
 		}
 
-		// 发送trap消息
-		log.Printf("Sending WARNING SNMP trap for %s: %s", metric.Name, message)
-		if _, err := snmpClient.SendTrap(trap); err != nil {
-			log.Printf("Failed to send WARNING SNMP trap for %s: %v", metric.Name, err)
-		} else {
-			log.Printf("Successfully sent WARNING SNMP trap for %s", metric.Name)
-		}
+		// 发送trap消息到所有目标
+		log.Printf("Sending WARNING SNMPTrap for %s: %s", metric.Name, message)
+		snmpClient.SendTrap(trap)
 		// 更新状态：标记为在告警状态
 		alertStatus.mu.Lock()
 		alertStatus.IsInAlert[metric.Name] = true
@@ -268,32 +309,30 @@ func sendMetricTrap(snmpClient *gosnmp.GoSNMP, metric Metric, alertStatus *Alert
 			// 从告警状态转为正常状态，发送清除消息（只发送一次）
 			message := fmt.Sprintf(metric.ClearTemplate, metricData.CurrentValue)
 
-			// 准备trap数据
+			// 准备trap数据 - 遵循SNMPv2c TRAP2 PDU规范
+			// 在SNMPv2c中，trap消息应包含snmpTrapOID作为第一个varbind，然后是enterprise特定的OIDs
 			vars := []gosnmp.SnmpPDU{
+				{
+					// SNMPv2-MIB::snmpTrapOID.0 - 必需的陷阱OID
+					Name:  ".1.3.6.1.6.3.1.1.4.1.0", // snmpTrapOID.0
+					Type:  gosnmp.ObjectIdentifier,
+					Value: metric.ClearOid, // 实际的清除OID
+				},
 				{
 					Name:  metric.ClearOid,
 					Type:  gosnmp.OctetString,
 					Value: []byte(message),
 				},
-				{
-					Name:  ".1.3.6.1.2.1.1.3.0", // sysUpTime
-					Type:  gosnmp.TimeTicks,
-					Value: uint32(time.Now().Unix() / 100),
-				},
 			}
 
-			// 创建SNMP trap
+			// 创建SNMPTrap
 			trap := gosnmp.SnmpTrap{
 				Variables: vars,
 			}
 
-			// 发送trap消息
-			log.Printf("Sending CLEAR SNMP trap for %s: %s", metric.Name, message)
-			if _, err := snmpClient.SendTrap(trap); err != nil {
-				log.Printf("Failed to send CLEAR SNMP trap for %s: %v", metric.Name, err)
-			} else {
-				log.Printf("Successfully sent CLEAR SNMP trap for %s", metric.Name)
-			}
+			// 发送trap消息到所有目标
+			log.Printf("Sending CLEAR SNMPTrap for %s: %s", metric.Name, message)
+			snmpClient.SendTrap(trap)
 			// 更新状态：标记为不在告警状态
 			alertStatus.mu.Lock()
 			alertStatus.IsInAlert[metric.Name] = false
@@ -309,11 +348,9 @@ func getMetricData(metricType, command string, threshold float64) (MetricData, e
 	var err error
 
 	switch metricType {
-	case "script":
-		// 将command作为脚本路径执行
+	case "script": // 将command作为脚本路径执行
 		outputStr, err = executeScriptAsPathRaw(command)
-	case "command":
-		// 将command作为命令行执行
+	case "command": // 将command作为命令行执行
 		outputStr, err = executeCommandRaw(command)
 	default:
 		return MetricData{}, fmt.Errorf("unsupported metric type: %s, only 'script' or 'command' are supported", metricType)
@@ -345,7 +382,6 @@ func getMetricData(metricType, command string, threshold float64) (MetricData, e
 
 // 执行脚本文件并返回原始输出
 func executeScriptAsPathRaw(scriptPath string) (string, error) {
-	// 检查是否是存在的文件路径
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("script file does not exist: %s", scriptPath)
 	}

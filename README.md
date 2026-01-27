@@ -116,7 +116,10 @@ sudo ./deploy.sh help
     "interval": 90,
     "snmp": {
       "community": "public",
-      "target": "192.168.0.100",
+      "targets": [
+        "192.168.0.100",
+        "192.168.0.101"
+      ],
       "port": 162
     }
   }
