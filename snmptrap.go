@@ -145,7 +145,7 @@ func setupLogger(printLog bool) {
 	if !printLog { // 如果不打印详细日志，则禁用日志输出
 		log.SetOutput(io.Discard)
 	} else { // 如果需要打印详细日志，则添加文件和行号信息
-		log.SetFlags(log.LstdFlags | log.Lshortfile)
+		log.SetFlags(log.LstdFlags)
 	}
 }
 
